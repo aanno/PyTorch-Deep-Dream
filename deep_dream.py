@@ -14,7 +14,7 @@ from utils import deprocess, preprocess, clip
 
 def dream(image, model, iterations, lr):
     """ Updates the image to maximize outputs for n iterations """
-    Tensor = torch.cuda.FloatTensor if torch.cuda.is_available else torch.FloatTensor
+    Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
     image = Variable(Tensor(image), requires_grad=True)
     for i in range(iterations):
         model.zero_grad()
@@ -22,7 +22,7 @@ def dream(image, model, iterations, lr):
         loss = out.norm()
         loss.backward()
         avg_grad = np.abs(image.grad.data.cpu().numpy()).mean()
-        norm_lr = lr / avg_grad
+        norm_lr = float(lr / avg_grad)
         image.data += norm_lr * image.grad.data
         image.data = clip(image.data)
         image.grad.data.zero_()
@@ -37,7 +37,7 @@ def deep_dream(image, model, iterations, lr, octave_scale, num_octaves):
     octaves = [image]
     for _ in range(num_octaves - 1):
         octaves.append(nd.zoom(octaves[-1], (1, 1, 1 / octave_scale, 1 / octave_scale), order=1))
-
+    
     detail = np.zeros_like(octaves[-1])
     for octave, octave_base in enumerate(tqdm.tqdm(octaves[::-1], desc="Dreaming")):
         if octave > 0:
@@ -56,11 +56,11 @@ def deep_dream(image, model, iterations, lr, octave_scale, num_octaves):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_image", type=str, default="images/supermarket.jpg", help="path to input image")
-    parser.add_argument("--iterations", default=20, help="number of gradient ascent steps per octave")
+    parser.add_argument("--iterations", default=20, type=int, help="number of gradient ascent steps per octave")
     parser.add_argument("--at_layer", default=27, type=int, help="layer at which we modify image to maximize outputs")
-    parser.add_argument("--lr", default=0.01, help="learning rate")
-    parser.add_argument("--octave_scale", default=1.4, help="image scale between octaves")
-    parser.add_argument("--num_octaves", default=10, help="number of octaves")
+    parser.add_argument("--lr", default=0.01, type=float, help="learning rate")
+    parser.add_argument("--octave_scale", default=1.4, type=float, help="image scale between octaves")
+    parser.add_argument("--num_octaves", default=10, type=int, help="number of octaves")
     args = parser.parse_args()
 
     # Load image
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     network = models.vgg19(pretrained=True)
     layers = list(network.features.children())
     model = nn.Sequential(*layers[: (args.at_layer + 1)])
-    if torch.cuda.is_available:
+    if torch.cuda.is_available():
         model = model.cuda()
     print(network)
 
@@ -88,6 +88,11 @@ if __name__ == "__main__":
     os.makedirs("outputs", exist_ok=True)
     filename = args.input_image.split("/")[-1]
     plt.figure(figsize=(20, 20))
+    # needed to fight rounding errors
+    print("before clipping: min", np.min(dreamed_image), "max", np.min(dreamed_image))
+    np.clip(dreamed_image, a_min=0.0, a_max=1.0, out=dreamed_image)
+    print("after clipping: min", np.min(dreamed_image), "max", np.min(dreamed_image))
     plt.imshow(dreamed_image)
-    plt.imsave(f"outputs/output_{filename}", dreamed_image)
+    plt.imsave("outputs/output_{}".format(filename), dreamed_image)
     plt.show()
+    
